@@ -1,5 +1,4 @@
 const fs = require("fs");
-const axios = require("axios");
 
 const createAttachments = function (image) {
   return fs.createReadStream(image);
@@ -26,8 +25,7 @@ async function saveContent(content, path) {
   const stringify_types = ["object", "array"];
   if (stringify_types.includes(typeof content))
     content = JSON.stringify(content);
-  console.log("path", path);
-  console.log("content", content);
+
   await fs.promises.writeFile(path, content);
 }
 

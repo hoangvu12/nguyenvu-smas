@@ -3,7 +3,8 @@ const login = require("facebook-chat-api");
 const requireDir = require("require-dir");
 const fs = require("fs");
 require("dotenv").config();
-let scheduleActivated = false;
+const requestedUsers = {};
+const Database = require("./database");
 
 // == Commands == //
 const commands = requireDir("./commands");
@@ -19,37 +20,32 @@ login(
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36",
     });
 
-    if (!scheduleActivated) {
-      const senderID = "100029483922771";
-
-      api.sendMessage("Bắt đầu bật thông báo!", senderID);
-
-      await SMAS.schedule(function (response) {
-        console.log(response);
-        if (response.newMail) {
-          const message = `Người gửi: ${response.sender}\nNội dung: ${response.body}`;
-          api.sendMessage(message, senderID);
-        }
-      });
-
-      scheduleActivated = true;
-    }
-
     api.listenMqtt(async function (err, event) {
       if (err) return console.error(err);
       if (event.type !== "message") return;
-      // if (event.isGroup) return;
+      if (event.isGroup) return;
       if (!event.body.startsWith("!")) return;
 
-      const argsArr = event.body.slice(1).trim().split(/ +/g);
-      const command = argsArr.shift().replace(/\./g, "_");
-      const args = argsArr.join(" ");
+      try {
+        const args = event.body.slice(1).trim().split(/ +/g);
+        const command = args.shift().replace(/\./g, "_");
 
-      if (typeof commands[command] !== "function") return;
+        if (typeof commands[command] !== "function") return;
 
-      const userFunction = commands[command];
-      const parameters = { args, api, event, SMAS };
-      await userFunction(parameters);
+        if (!(event.senderID in requestedUsers)) {
+          requestedUsers[event.senderID] = {
+            smas: new SMAS(event.senderID),
+          };
+        }
+
+        const user = requestedUsers[event.senderID];
+
+        const userFunction = commands[command];
+        const parameters = { args, api, event, smas: user.smas, Database };
+        await userFunction(parameters);
+      } catch (err) {
+        api.sendMessage(err.message, event.senderID);
+      }
     });
   }
 );
