@@ -18,4 +18,8 @@ After get cookies, make an .env file with two variables
 
 Run the bot with `node index.js` or `node .`
 
-Message `!tkb` to get latest timetable.
+
+## Commands
+`!update` Update smas account!. `args`: True. Ex: `!update <username> <account>`
+`!schedule` Start listening for new mail per 5 minutes, also update the timetable! `args`: False
+`!tkb` Get the latest saved timetable in `!schedule command`! `args`: False
