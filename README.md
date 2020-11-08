@@ -20,6 +20,6 @@ Run the bot with `node index.js` or `node .`
 
 
 ## Commands
-`!update` Update smas account!. `args`: True. Ex: `!update <username> <account>`
-`!schedule` Start listening for new mail per 5 minutes, also update the timetable! `args`: False
-`!tkb` Get the latest saved timetable in `!schedule command`! `args`: False
+`!update` Update smas account!. `args`: True. Ex: `!update <username> <account>`  
+`!schedule` Start listening for new mail per 5 minutes, also update the timetable! `args`: False  
+`!tkb` Get the latest saved timetable in `!schedule command`! `args`: False  
