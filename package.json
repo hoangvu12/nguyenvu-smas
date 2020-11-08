@@ -1,0 +1,23 @@
+{
+  "name": "smas",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "dependencies": {
+    "axios": "^0.21.0",
+    "axios-cookiejar-support": "^1.0.1",
+    "dotenv": "^8.2.0",
+    "facebook-chat-api": "^1.8.0",
+    "node-schedule-tz": "^1.2.1-4",
+    "require-dir": "^1.2.0",
+    "tough-cookie": "^4.0.0"
+  },
+  "devDependencies": {},
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
