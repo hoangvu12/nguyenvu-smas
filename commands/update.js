@@ -11,10 +11,11 @@ module.exports = async function ({ args, api, event, Database, smas }) {
     };
 
     const isExist = await Database.isExist("users", find_value);
+
     if (!isExist) await Database.post("users", update_value);
     else await Database.update("users", find_value, update_value);
 
-    await smas.update(username, password);
+    await smas.updateCredentials(username, password);
 
     api.sendMessage("Update thành công", event.senderID);
   } catch (err) {

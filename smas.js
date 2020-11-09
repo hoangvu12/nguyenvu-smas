@@ -16,7 +16,7 @@ class SMAS {
     this.credentialsProvided = false;
   }
 
-  async update(username, password) {
+  async updateCredentials(username, password) {
     this.username = username;
     this.password = password;
 
@@ -30,8 +30,8 @@ class SMAS {
   }
 
   async login() {
-    const isCreProvied = await this.isCreProvied();
-    if (!isCreProvied) throw new Error("Please provide credentials");
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
 
     const url = "http://smsedu.smas.vn/User/Login";
     const body = `UserName=${this.username}&Password=${this.password}`;
@@ -57,18 +57,14 @@ class SMAS {
   async updateTimeTable() {
     if (!this.loggedIn) await this.login();
 
-    const isExist = await Database.isExist(
-      "users",
-      this.find_value,
-      "timeTable"
-    );
+    const isExist = await this.isExist("timeTable");
 
     let savedTimeTable;
 
     if (!isExist) {
       savedTimeTable = [];
     } else {
-      const user = await Database.get("users", this.find_value);
+      const user = await this.get();
       savedTimeTable = user.timeTable;
     }
 
@@ -84,50 +80,43 @@ class SMAS {
 
     if (JSON.stringify(savedTimeTable) === JSON.stringify(scheduler)) return;
 
-    await Database.update("users", this.find_value, { timeTable: scheduler });
+    await this.update({ timeTable: scheduler });
 
     return scheduler;
   }
 
-  async isCreProvied() {
-    if (!this.credentialsProvided) {
-      const isExist = await Database.isExist(
-        "users",
-        this.find_value,
-        "SMAS_USERNAME"
-      );
+  async isCreProvided() {
+    const error = new Error("Please provide credentials");
+    try {
+      if (!this.credentialsProvided) {
+        const isExist = await this.isExist("SMAS_USERNAME");
 
-      if (isExist) {
-        const user = await Database.get("users", this.find_value);
+        if (!isExist) throw error;
+
+        const user = await this.get();
         this.username = user.SMAS_USERNAME || "";
         this.password = user.SMAS_PASSWORD || "";
 
         this.credentialsProvided = true;
-
-        return true;
       }
 
-      return false;
+      return true;
+    } catch (err) {
+      throw error;
     }
-
-    return true;
   }
 
   async getTimeTable() {
-    const isCreProvied = await this.isCreProvied();
-    if (!isCreProvied) throw new Error("Please provide credentials");
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
 
     let savedTimeTable;
 
-    const isExist = await Database.isExist(
-      "users",
-      this.find_value,
-      "timeTable"
-    );
+    const isExist = await this.isExist("timeTable");
 
     if (!isExist) savedTimeTable = await this.updateTimeTable();
     else {
-      const user = await Database.get("users", this.find_value);
+      const user = await this.get();
       savedTimeTable = user.timeTable;
     }
 
@@ -161,17 +150,13 @@ class SMAS {
   }
 
   async getMail() {
-    let isFileExist = await Database.isExist(
-      "users",
-      this.find_value,
-      "latestMailId"
-    );
+    let isFileExist = await this.isExist("latestMailId");
 
     let savedLatestMaildId;
 
     if (!isFileExist) savedLatestMaildId = "000000";
     else {
-      const user = await Database.get("users", this.find_value);
+      const user = await this.get();
       savedLatestMaildId = user.latestMailId;
     }
 
@@ -194,7 +179,7 @@ class SMAS {
 
     if (currentLatestMailId === savedLatestMaildId) return { newMail: false };
 
-    await Database.update("users", this.find_value, {
+    await this.update({
       latestMailId: currentLatestMailId,
     });
 
@@ -205,12 +190,24 @@ class SMAS {
     };
   }
 
+  async isExist(property) {
+    return await Database.isExist("users", this.find_value, property);
+  }
+
+  async update(update_value) {
+    await Database.update("users", this.find_value, update_value);
+  }
+
+  async get() {
+    return await Database.get("users", this.find_value);
+  }
+
   async schedule(callback) {
-    const isCreProvied = await this.isCreProvied();
-    if (!isCreProvied) throw new Error("Please provide credentials");
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
 
     const name = "get mails";
-    const rule = "*/5 * * * * *";
+    const rule = "*/5 * * * *";
     const timezone = "Asia/Ho_Chi_Minh";
     let j = schedule.scheduleJob(
       name,

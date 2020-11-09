@@ -36,6 +36,7 @@ login(
           requestedUsers[event.senderID] = {
             smas: new SMAS(event.senderID),
           };
+          await Database.initialize("users");
         }
 
         const user = requestedUsers[event.senderID];
@@ -44,7 +45,8 @@ login(
         const parameters = { args, api, event, smas: user.smas, Database };
         await userFunction(parameters);
       } catch (err) {
-        api.sendMessage(err.message, event.senderID);
+        console.log(err);
+        api.sendMessage(`Error: ${err.message}`, event.senderID);
       }
     });
   }
