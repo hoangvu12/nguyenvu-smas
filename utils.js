@@ -1,4 +1,10 @@
 const fs = require("fs");
+const Entities = require("html-entities").AllHtmlEntities;
+const entities = new Entities();
+
+const decodeEntities = function (text) {
+  return entities.decode(text);
+};
 
 const createAttachments = function (image) {
   return fs.createReadStream(image);
@@ -42,4 +48,5 @@ module.exports = {
   htmlPreview,
   saveContent,
   readContent,
+  decodeEntities,
 };

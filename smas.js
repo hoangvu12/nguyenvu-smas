@@ -1,24 +1,22 @@
-const axios = require("axios").default;
-const axiosCookieJarSupport = require("axios-cookiejar-support").default;
-const tough = require("tough-cookie");
 const schedule = require("node-schedule-tz");
 const Database = require("./database");
+const utils = require("./utils");
+const API = require("./api");
 require("dotenv").config();
-
-axiosCookieJarSupport(axios);
-
-const cookieJar = new tough.CookieJar();
 
 class SMAS {
   constructor(senderID) {
     this.senderID = senderID;
     this.find_value = { senderID: this.senderID };
     this.credentialsProvided = false;
+    this.api = new API();
   }
 
   async updateCredentials(username, password) {
     this.username = username;
     this.password = password;
+
+    this.api.updateOpts({ username, password });
 
     try {
       await this.login();
@@ -33,23 +31,25 @@ class SMAS {
     const isCreProvided = await this.isCreProvided();
     if (!isCreProvided) throw new Error("Please provide credentials");
 
-    const url = "http://smsedu.smas.vn/User/Login";
-    const body = `UserName=${this.username}&Password=${this.password}`;
-    const headers = {
-      "Content-Type": "application/x-www-form-urlencoded",
-    };
-
     try {
-      await axios.post(url, body, {
-        headers,
-        maxRedirects: 0,
-        validateStatus: function (status) {
-          return status === 302;
-        },
-        jar: cookieJar,
-        withCredentials: true,
-      });
+      const data = await this.api.login();
+
+      let param = data.getStr2('<a href="', '"');
+      param = utils.decodeEntities(param);
+
+      this.homepageUrl = `http://smsedu.smas.vn${param}`;
+      this.params = require("url").parse(param, {
+        parseQueryString: true,
+      }).query;
+
+      this.params.homepage = this.homepageUrl;
+
+      const params = { ...this.params };
+
+      // this.api.params = this.paramObj;
+      this.api.updateOpts({ params });
     } catch (err) {
+      console.log(err);
       throw new Error("Invalid credentials");
     }
   }
@@ -68,13 +68,7 @@ class SMAS {
       savedTimeTable = user.timeTable;
     }
 
-    const URL =
-      "http://smsedu.smas.vn/Home/Dashboard?schoolID=97078&academicYearID=1871034&classID=443472548&pupilID=39772293";
-
-    const { data } = await axios.get(URL, {
-      jar: cookieJar,
-      withCredentials: true,
-    });
+    const data = await this.api.getTimeTable();
 
     const scheduler = JSON.parse(data.match(/scheduler = (\[.*?\])/)[1]);
 
@@ -97,6 +91,11 @@ class SMAS {
         this.username = user.SMAS_USERNAME || "";
         this.password = user.SMAS_PASSWORD || "";
 
+        this.api.updateOpts({
+          username: this.username,
+          password: this.password,
+        });
+
         this.credentialsProvided = true;
       }
 
@@ -104,6 +103,22 @@ class SMAS {
     } catch (err) {
       throw error;
     }
+  }
+
+  async getLatestMail() {
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
+
+    if (!this.loggedIn) await this.login();
+
+    const data = await this.api.getMail();
+
+    if (JSON.stringify(data) === "[]")
+      throw new Error("Không tìm thấy mail nào!");
+
+    const mail = data[0];
+
+    return { sender: mail.senderInfo, body: mail.content };
   }
 
   async getTimeTable() {
@@ -160,18 +175,9 @@ class SMAS {
       savedLatestMaildId = user.latestMailId;
     }
 
-    const url = "http://smsedu.smas.vn/Home/CallApi";
-    const body =
-      "key=%5B%22schoolID%22%2C%22pupilID%22%2C%22pageSize%22%2C%22pageNumber%22%5D&value=%5B%2297078%22%2C%2239772293%22%2C%2220%22%2C1%5D&uri=api%2Fnewmessage%2FgetNewMessage%3F&parseObject=getNewMessage";
-    const headers = {
-      "Content-Type": "application/x-www-form-urlencoded",
-    };
+    const data = await this.api.getMail();
 
-    const { data } = await axios.post(url, body, {
-      headers,
-      jar: cookieJar,
-      withCredentials: true,
-    });
+    if (JSON.stringify(data) === "[]") return { newMail: false };
 
     const currentMail = data[0];
 
@@ -207,7 +213,7 @@ class SMAS {
     if (!isCreProvided) throw new Error("Please provide credentials");
 
     const name = "get mails";
-    const rule = "*/5 * * * *";
+    const rule = "*/5 * * * * *";
     const timezone = "Asia/Ho_Chi_Minh";
     let j = schedule.scheduleJob(
       name,
@@ -218,6 +224,7 @@ class SMAS {
         await this.updateTimeTable();
         const isNewEmail = await this.getMail();
         this.loggedIn = true;
+        console.log(`[${this.senderID}] New mail: ${isNewEmail.newMail}`);
         callback(isNewEmail);
       }.bind(this)
     );
