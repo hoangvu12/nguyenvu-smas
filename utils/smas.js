@@ -1,6 +1,6 @@
 const schedule = require("node-schedule-tz");
 const Database = require("./database");
-const utils = require("./utils");
+const utils = require("../utils");
 const API = require("./api");
 require("dotenv").config();
 
@@ -9,14 +9,15 @@ class SMAS {
     this.senderID = senderID;
     this.find_value = { senderID: this.senderID };
     this.credentialsProvided = false;
-    this.api = new API();
+    this.LOGIN_RETRIES = 3;
+    this.API = new API();
   }
 
   async updateCredentials(username, password) {
     this.username = username;
     this.password = password;
 
-    this.api.updateOpts({ username, password });
+    this.API.updateOpts({ username, password });
 
     try {
       await this.login();
@@ -32,7 +33,7 @@ class SMAS {
     if (!isCreProvided) throw new Error("Please provide credentials");
 
     try {
-      const data = await this.api.login();
+      const data = await this.API.login();
 
       let param = data.getStr2('<a href="', '"');
       param = utils.decodeEntities(param);
@@ -46,37 +47,42 @@ class SMAS {
 
       const params = { ...this.params };
 
-      // this.api.params = this.paramObj;
-      this.api.updateOpts({ params });
+      // this.API.params = this.paramObj;
+      this.API.updateOpts({ params });
     } catch (err) {
-      console.log(err);
-      throw new Error("Invalid credentials");
+      if (this.retried > this.LOGIN_RETRIES)
+        throw new Error("Invalid credentials");
+      this.login();
     }
   }
 
   async updateTimeTable() {
-    if (!this.loggedIn) await this.login();
+    try {
+      if (!this.loggedIn) await this.login();
 
-    const isExist = await this.isExist("timeTable");
+      const isExist = await this.isExist("timeTable");
 
-    let savedTimeTable;
+      let savedTimeTable;
 
-    if (!isExist) {
-      savedTimeTable = [];
-    } else {
-      const user = await this.get();
-      savedTimeTable = user.timeTable;
+      if (!isExist) {
+        savedTimeTable = [];
+      } else {
+        const user = await this.db_get();
+        savedTimeTable = user.timeTable;
+      }
+
+      const data = await this.API.getTimeTable();
+
+      const scheduler = JSON.parse(data.match(/scheduler = (\[.*?\])/)[1]);
+
+      if (JSON.stringify(savedTimeTable) === JSON.stringify(scheduler)) return;
+
+      await this.db_update({ timeTable: scheduler });
+
+      return scheduler;
+    } catch (err) {
+      await this.updateTimeTable();
     }
-
-    const data = await this.api.getTimeTable();
-
-    const scheduler = JSON.parse(data.match(/scheduler = (\[.*?\])/)[1]);
-
-    if (JSON.stringify(savedTimeTable) === JSON.stringify(scheduler)) return;
-
-    await this.update({ timeTable: scheduler });
-
-    return scheduler;
   }
 
   async isCreProvided() {
@@ -87,11 +93,11 @@ class SMAS {
 
         if (!isExist) throw error;
 
-        const user = await this.get();
+        const user = await this.db_get();
         this.username = user.SMAS_USERNAME || "";
         this.password = user.SMAS_PASSWORD || "";
 
-        this.api.updateOpts({
+        this.API.updateOpts({
           username: this.username,
           password: this.password,
         });
@@ -111,7 +117,7 @@ class SMAS {
 
     if (!this.loggedIn) await this.login();
 
-    const data = await this.api.getMail();
+    const data = await this.API.getMail();
 
     if (JSON.stringify(data) === "[]")
       throw new Error("Không tìm thấy mail nào!");
@@ -131,7 +137,7 @@ class SMAS {
 
     if (!isExist) savedTimeTable = await this.updateTimeTable();
     else {
-      const user = await this.get();
+      const user = await this.db_get();
       savedTimeTable = user.timeTable;
     }
 
@@ -165,46 +171,50 @@ class SMAS {
   }
 
   async getMail() {
-    let isFileExist = await this.isExist("latestMailId");
+    try {
+      let isFileExist = await this.isExist("latestMailId");
 
-    let savedLatestMaildId;
+      let savedLatestMaildId;
 
-    if (!isFileExist) savedLatestMaildId = "000000";
-    else {
-      const user = await this.get();
-      savedLatestMaildId = user.latestMailId;
+      if (!isFileExist) savedLatestMaildId = "000000";
+      else {
+        const user = await this.db_get();
+        savedLatestMaildId = user.latestMailId;
+      }
+
+      const data = await this.API.getMail();
+
+      if (JSON.stringify(data) === "[]") return { newMail: false };
+
+      const currentMail = data[0];
+
+      const currentLatestMailId = currentMail.historyID;
+
+      if (currentLatestMailId === savedLatestMaildId) return { newMail: false };
+
+      await this.db_update({
+        latestMailId: currentLatestMailId,
+      });
+
+      return {
+        newMail: true,
+        sender: currentMail.senderInfo,
+        body: currentMail.content,
+      };
+    } catch (err) {
+      await this.getMail();
     }
-
-    const data = await this.api.getMail();
-
-    if (JSON.stringify(data) === "[]") return { newMail: false };
-
-    const currentMail = data[0];
-
-    const currentLatestMailId = currentMail.historyID;
-
-    if (currentLatestMailId === savedLatestMaildId) return { newMail: false };
-
-    await this.update({
-      latestMailId: currentLatestMailId,
-    });
-
-    return {
-      newMail: true,
-      sender: currentMail.senderInfo,
-      body: currentMail.content,
-    };
   }
 
   async isExist(property) {
     return await Database.isExist("users", this.find_value, property);
   }
 
-  async update(update_value) {
+  async db_update(update_value) {
     await Database.update("users", this.find_value, update_value);
   }
 
-  async get() {
+  async db_get() {
     return await Database.get("users", this.find_value);
   }
 
@@ -213,7 +223,7 @@ class SMAS {
     if (!isCreProvided) throw new Error("Please provide credentials");
 
     const name = "get mails";
-    const rule = "*/5 * * * * *";
+    const rule = "*/5 * * * *";
     const timezone = "Asia/Ho_Chi_Minh";
     let j = schedule.scheduleJob(
       name,

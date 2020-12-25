@@ -1,6 +1,6 @@
 const low = require("lowdb");
 const FileAsync = require("lowdb/adapters/FileAsync");
-const adapter = new FileAsync("db.json");
+const adapter = new FileAsync("./db.json");
 
 class Database {
   static async initialize(fields) {

@@ -7,3 +7,9 @@ latestMail.json
 Procfile
 db.json
 appstate.json
+images
+commands/nsfw.js
+commands/wallpaper.js
+utils/akaneko.js
+utils/pixiv.js
+appstate*
