@@ -29,6 +29,10 @@ class Database {
     return await this.db.get(field).find(value).value();
   }
 
+  static async getAll(field) {
+    return await this.db.get(field).value();
+  }
+
   static async update(field, find_value, update_value) {
     await this.db.get(field).find(find_value).assign(update_value).write();
   }

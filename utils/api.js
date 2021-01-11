@@ -2,11 +2,13 @@ const axios = require("axios").default;
 const axiosCookieJarSupport = require("axios-cookiejar-support").default;
 const tough = require("tough-cookie");
 axiosCookieJarSupport(axios);
-const Database = require("./database");
+const utils = require("../utils");
 
 class API {
   constructor() {
     this.cookieJar = new tough.CookieJar();
+    this.loggedIn = false;
+    this.studentSelected = false;
   }
 
   updateOpts(opts) {
@@ -20,17 +22,39 @@ class API {
       "Content-Type": "application/x-www-form-urlencoded",
     };
 
-    const { data } = await axios.post(url, body, {
-      headers,
-      maxRedirects: 0,
+    try {
+      const { data } = await axios.post(url, body, {
+        headers,
+        maxRedirects: 0,
+        validateStatus: function (status) {
+          return status === 302;
+        },
+        jar: this.cookieJar,
+        withCredentials: true,
+      });
+
+      this.loggedIn = true;
+
+      return data;
+    } catch (err) {
+      return await this.login();
+    }
+  }
+
+  async getLearningProcess() {
+    if (!this.studentSelected) await this.getTimeTable();
+
+    const URL = "http://smsedu.smas.vn/Home/Profile?currentab=2";
+
+    const response = await axios.get(URL, {
       validateStatus: function (status) {
-        return status === 302;
+        return status === 302 || status === 200;
       },
       jar: this.cookieJar,
       withCredentials: true,
     });
 
-    return data;
+    return response.data;
   }
 
   async getTimeTable() {
@@ -40,6 +64,8 @@ class API {
       jar: this.cookieJar,
       withCredentials: true,
     });
+
+    this.studentSelected = true;
 
     return data;
   }

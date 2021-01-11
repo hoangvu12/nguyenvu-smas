@@ -3,6 +3,7 @@ const Entities = require("html-entities").AllHtmlEntities;
 const entities = new Entities();
 const axios = require("axios");
 const uniqueFilename = require("unique-filename");
+const Database = require("./utils/database");
 
 const decodeEntities = function (text) {
   return entities.decode(text);
@@ -20,7 +21,8 @@ function checkFileExists(file) {
 }
 
 async function htmlPreview(html) {
-  fs.promises.writeFile("./index.html", html);
+  await fs.promises.writeFile("./index.html", html);
+  console.log("Saved to index.html");
 }
 
 function getStr2(start, end) {
@@ -96,6 +98,19 @@ async function downloadImage(url, path, opts) {
   });
 }
 
+function hasEmptyValues(array) {
+  var l = array.length,
+    i = 0;
+
+  for (i = 0; i < l; i += 1) {
+    if (!array[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 module.exports = {
   createAttachments,
   checkFileExists,
@@ -105,4 +120,5 @@ module.exports = {
   decodeEntities,
   getStreamImage,
   downloadImage,
+  hasEmptyValues,
 };

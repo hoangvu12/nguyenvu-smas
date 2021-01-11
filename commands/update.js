@@ -6,8 +6,6 @@ module.exports = {
   description: "Cập nhật tài khoản và mật khẩu SMAS",
   async execute({ args, api, event, Database, smas }) {
     try {
-      await Database.initialize("users");
-
       const [username, password] = args;
       const find_value = { senderID: event.senderID };
       const update_value = {
@@ -22,6 +20,7 @@ module.exports = {
       else await Database.update("users", find_value, update_value);
 
       await smas.updateCredentials(username, password);
+      smas.updateSchedule();
 
       api.sendMessage("Update thành công", event.senderID);
     } catch (err) {

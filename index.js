@@ -13,7 +13,7 @@ const ALLOWED_GROUPS = ["2615370441918987"];
 const MINUTE = 60000;
 
 login(
-  { appState: JSON.parse(fs.readFileSync("appstate.json", "utf-8")) },
+  { appState: JSON.parse(fs.readFileSync("appstate-main.json", "utf-8")) },
   async (err, api) => {
     if (err) return console.log("LOGIN", err);
 
@@ -24,6 +24,8 @@ login(
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.132 Safari/537.36",
     });
+
+    await Database.initialize("users");
 
     function acceptPendingMessages() {
       api.getThreadList(20, null, ["PENDING"], function (err, friends) {
@@ -41,8 +43,21 @@ login(
       });
     }
 
+    async function startUsersSchedule() {
+      const users = await Database.getAll("users");
+
+      users.forEach((user) => {
+        requestedUsers[user.senderID] = {
+          smas: new SMAS(user.senderID),
+        };
+
+        requestedUsers[user.senderID].smas.updateSchedule();
+      });
+    }
+
     setInterval(acceptPendingMessages, 30 * MINUTE);
     acceptPendingMessages();
+    startUsersSchedule();
 
     api.listenMqtt(async function (err, event) {
       if (err) return console.log("LISTEN", err);
@@ -60,7 +75,6 @@ login(
           requestedUsers[event.senderID] = {
             smas: new SMAS(event.senderID),
           };
-          await Database.initialize("users");
         }
 
         const user = requestedUsers[event.senderID];

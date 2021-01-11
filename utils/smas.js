@@ -2,12 +2,13 @@ const schedule = require("node-schedule-tz");
 const Database = require("./database");
 const utils = require("../utils");
 const API = require("./api");
+const MINUTE = 60000;
 require("dotenv").config();
 
 class SMAS {
   constructor(senderID) {
     this.senderID = senderID;
-    this.find_value = { senderID: this.senderID };
+    this.userDatabaseValue = { senderID: this.senderID };
     this.credentialsProvided = false;
     this.LOGIN_RETRIES = 3;
     this.API = new API();
@@ -56,20 +57,45 @@ class SMAS {
     }
   }
 
+  async updateLearningProcess() {
+    try {
+      if (!this.loggedIn) await this.login();
+
+      const savedLearningProcess = await getSpecificUserInfo(
+        this.userDatabaseValue,
+        "learningProcess",
+        []
+      );
+
+      const data = await this.API.getLearningProcess();
+
+      const { subjectMark: learningProcess } = JSON.parse(
+        data.match(/infoLearnProcess = (.*?);/)[1]
+      );
+
+      if (
+        JSON.stringify(savedLearningProcess) === JSON.stringify(learningProcess)
+      )
+        return;
+
+      updateUserInfo(this.userDatabaseValue, { learningProcess });
+
+      return learningProcess;
+    } catch (err) {
+      console.log(err);
+      return await this.updateLearningProcess();
+    }
+  }
+
   async updateTimeTable() {
     try {
       if (!this.loggedIn) await this.login();
 
-      const isExist = await this.isExist("timeTable");
-
-      let savedTimeTable;
-
-      if (!isExist) {
-        savedTimeTable = [];
-      } else {
-        const user = await this.db_get();
-        savedTimeTable = user.timeTable;
-      }
+      const savedTimeTable = await getSpecificUserInfo(
+        this.userDatabaseValue,
+        "timeTable",
+        []
+      );
 
       const data = await this.API.getTimeTable();
 
@@ -77,11 +103,11 @@ class SMAS {
 
       if (JSON.stringify(savedTimeTable) === JSON.stringify(scheduler)) return;
 
-      await this.db_update({ timeTable: scheduler });
+      updateUserInfo(this.userDatabaseValue, { timeTable: scheduler });
 
       return scheduler;
     } catch (err) {
-      await this.updateTimeTable();
+      return await this.updateTimeTable();
     }
   }
 
@@ -89,11 +115,14 @@ class SMAS {
     const error = new Error("Please provide credentials");
     try {
       if (!this.credentialsProvided) {
-        const isExist = await this.isExist("SMAS_USERNAME");
+        const isExist = await isPropertyExist(
+          this.userDatabaseValue,
+          "SMAS_USERNAME"
+        );
 
         if (!isExist) throw error;
 
-        const user = await this.db_get();
+        const user = await getUserInfo(this.userDatabaseValue);
         this.username = user.SMAS_USERNAME || "";
         this.password = user.SMAS_PASSWORD || "";
 
@@ -107,6 +136,7 @@ class SMAS {
 
       return true;
     } catch (err) {
+      console.log(err);
       throw error;
     }
   }
@@ -127,19 +157,46 @@ class SMAS {
     return { sender: mail.senderInfo, body: mail.content };
   }
 
+  async getLearningProcess() {
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
+
+    const savedLearningProcess = await getSpecificUserInfo(
+      this.userDatabaseValue,
+      "learningProcess",
+      this.updateLearningProcess.bind(this)
+    );
+
+    let message = "";
+
+    savedLearningProcess.forEach((subject) => {
+      let diem_thuong_xuyen = getMark(subject.listMarkM);
+      let diem_giua_ky = getMark(subject.listMarkV);
+      let diem_cuoi_ky = getMark(subject.listMarkP);
+      let trung_binh_mon = subject.avgPointHK1
+        ? subject.avgPointHK1
+        : "Không có";
+
+      message += `Môn: ${subject.subjectName}\n`;
+      message += ` + Điểm thường xuyên: ${diem_thuong_xuyen}`;
+      message += ` + Điểm giữa kỳ: ${diem_giua_ky}`;
+      message += ` + Điểm cuối kỳ: ${diem_cuoi_ky}`;
+      message += ` + Trung bình môn: ${trung_binh_mon}\n`;
+      message += "\n";
+    });
+
+    return message;
+  }
+
   async getTimeTable() {
     const isCreProvided = await this.isCreProvided();
     if (!isCreProvided) throw new Error("Please provide credentials");
 
-    let savedTimeTable;
-
-    const isExist = await this.isExist("timeTable");
-
-    if (!isExist) savedTimeTable = await this.updateTimeTable();
-    else {
-      const user = await this.db_get();
-      savedTimeTable = user.timeTable;
-    }
+    const savedTimeTable = await getSpecificUserInfo(
+      this.userDatabaseValue,
+      "timeTable",
+      this.updateTimeTable.bind(this)
+    );
 
     const timetable = {};
 
@@ -172,15 +229,11 @@ class SMAS {
 
   async getMail() {
     try {
-      let isFileExist = await this.isExist("latestMailId");
-
-      let savedLatestMaildId;
-
-      if (!isFileExist) savedLatestMaildId = "000000";
-      else {
-        const user = await this.db_get();
-        savedLatestMaildId = user.latestMailId;
-      }
+      const savedLatestMaildId = await getSpecificUserInfo(
+        this.userDatabaseValue,
+        "latestMailId",
+        "000000"
+      );
 
       const data = await this.API.getMail();
 
@@ -192,7 +245,7 @@ class SMAS {
 
       if (currentLatestMailId === savedLatestMaildId) return { newMail: false };
 
-      await this.db_update({
+      updateUserInfo(this.userDatabaseValue, {
         latestMailId: currentLatestMailId,
       });
 
@@ -202,20 +255,22 @@ class SMAS {
         body: currentMail.content,
       };
     } catch (err) {
-      await this.getMail();
+      return await this.getMail();
     }
   }
 
-  async isExist(property) {
-    return await Database.isExist("users", this.find_value, property);
-  }
+  async updateSchedule() {
+    const isCreProvided = await this.isCreProvided();
+    if (!isCreProvided) throw new Error("Please provide credentials");
+    const self = this;
 
-  async db_update(update_value) {
-    await Database.update("users", this.find_value, update_value);
-  }
-
-  async db_get() {
-    return await Database.get("users", this.find_value);
+    setInterval(async function () {
+      console.log("Start updating... " + self.senderID);
+      await self.login();
+      await self.updateTimeTable();
+      await self.updateLearningProcess();
+      await self.getMail();
+    }, MINUTE * 1);
   }
 
   async schedule(callback) {
@@ -232,13 +287,56 @@ class SMAS {
       async function () {
         await this.login();
         await this.updateTimeTable();
+        await this.updateLearningProcess();
         const isNewEmail = await this.getMail();
+
         this.loggedIn = true;
+
         console.log(`[${this.senderID}] New mail: ${isNewEmail.newMail}`);
+
         callback(isNewEmail);
       }.bind(this)
     );
   }
+}
+
+const showMark = (marks) => {
+  if (marks.every((mark) => !mark)) return "Không có\n";
+
+  return marks.join(", ") + "\n";
+};
+
+const getMark = (array) => showMark(array.map((diem) => diem.mark));
+
+async function isPropertyExist(userValue, property) {
+  return await Database.isExist("users", userValue, property);
+}
+
+async function getSpecificUserInfo(userValue, property, defaultValue) {
+  const isPropExist = await isPropertyExist(userValue, property);
+
+  let savedDatabaseValue;
+
+  if (!isPropExist) {
+    if (typeof defaultValue === "function") {
+      savedDatabaseValue = await defaultValue();
+    } else {
+      savedDatabaseValue = defaultValue;
+    }
+  } else {
+    const user = await getUserInfo(userValue);
+    savedDatabaseValue = user[property];
+  }
+
+  return savedDatabaseValue;
+}
+
+async function updateUserInfo(userValue, updateValue) {
+  await Database.update("users", userValue, updateValue);
+}
+
+async function getUserInfo(userValue) {
+  return await Database.get("users", userValue);
 }
 
 module.exports = SMAS;
